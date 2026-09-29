@@ -5,6 +5,7 @@ import {
   TRAFFIC_COUNT,
   WORLD_SPEED
 } from "./config.js";
+import { roadOffsetAtZ, roadYawAtZ } from "./road.js";
 
 const CAR_COLORS = [
   0xdd3146,
@@ -15,6 +16,10 @@ const CAR_COLORS = [
   0x6c55d7,
   0x25272a
 ];
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
 
 function addBox(width, height, depth, material, x, y, z, parent) {
   const mesh = new THREE.Mesh(
@@ -81,15 +86,32 @@ function buildCar() {
 }
 
 function resetCar(car, zMin = -450, zMax = -85) {
-  car.position.x =
+  car.userData.laneX =
     LANE_CENTERS[(Math.random() * LANE_CENTERS.length) | 0] +
     (Math.random() - 0.5) * 0.35;
-  car.position.z = zMin + Math.random() * (zMax - zMin);
-  car.position.y = 0.04;
 
+  car.userData.laneOffset = 0;
+  car.userData.nudgeVelocity = 0;
   car.userData.speed = 35 + Math.random() * 65;
   car.userData.passed = false;
   car.userData.near = false;
+  car.userData.collisionCooldown = 0;
+
+  car.position.set(
+    car.userData.laneX,
+    0.04,
+    zMin + Math.random() * (zMax - zMin)
+  );
+  car.rotation.y = 0;
+}
+
+function updateCarRoadPosition(car, curve) {
+  car.position.x =
+    roadOffsetAtZ(car.position.z, curve) +
+    car.userData.laneX +
+    car.userData.laneOffset;
+
+  car.rotation.y = roadYawAtZ(car.position.z, curve);
 }
 
 export function createTraffic(scene) {
@@ -112,15 +134,26 @@ export function createTraffic(scene) {
     dt,
     playerSpeed,
     lateral,
+    roadCurve,
     onCollision,
     onOvertake,
     onClosePass
   }) {
     for (const car of cars) {
+      car.userData.collisionCooldown = Math.max(
+        0,
+        car.userData.collisionCooldown - dt
+      );
+
+      car.userData.laneOffset += car.userData.nudgeVelocity * dt;
+      car.userData.nudgeVelocity *= Math.exp(-5.5 * dt);
+      car.userData.laneOffset *= Math.exp(-1.15 * dt);
+
       const relativeSpeed =
         (playerSpeed - car.userData.speed) * WORLD_SPEED;
 
       car.position.z += relativeSpeed * dt;
+      updateCarRoadPosition(car, roadCurve);
 
       if (car.position.z > 7) {
         if (!car.userData.passed) {
@@ -129,27 +162,64 @@ export function createTraffic(scene) {
         }
 
         resetCar(car, -520, -250);
+        updateCarRoadPosition(car, roadCurve);
         continue;
       }
 
       if (car.position.z < -560) {
         resetCar(car, -220, -80);
+        updateCarRoadPosition(car, roadCurve);
         continue;
       }
 
-      const deltaX = car.position.x - lateral;
+      const trafficLateral =
+        car.userData.laneX + car.userData.laneOffset;
+      const deltaX = trafficLateral - lateral;
+      const overlappingLongitudinally =
+        car.position.z > -2.4 && car.position.z < 4.4;
 
       if (
+        car.userData.collisionCooldown <= 0 &&
         Math.abs(deltaX) < 1.72 &&
-        car.position.z > -2.1 &&
-        car.position.z < 4.3
+        overlappingLongitudinally
       ) {
-        onCollision(GAMEPLAY.collisionDamage, "COLLISION");
-        car.position.z = -180 - Math.random() * 180;
+        const relativeMph = Math.abs(playerSpeed - car.userData.speed);
+        const impact = clamp(0.35 + relativeMph / 105, 0.35, 1);
+        const damage =
+          GAMEPLAY.collisionDamageMin +
+          (GAMEPLAY.collisionDamageMax - GAMEPLAY.collisionDamageMin) *
+            impact;
+
+        const pushDirection = deltaX >= 0 ? -1 : 1;
+        const playerPush =
+          pushDirection *
+          GAMEPLAY.collisionPush *
+          (0.75 + impact * 0.45);
+
+        const accepted = onCollision({
+          damage,
+          push: playerPush,
+          speedRetention: 0.72 - impact * 0.16,
+          otherSpeed: car.userData.speed,
+          reason: impact > 0.72 ? "HARD COLLISION" : "COLLISION"
+        });
+
+        if (accepted !== false) {
+          car.userData.collisionCooldown =
+            GAMEPLAY.trafficCollisionCooldown;
+
+          car.userData.nudgeVelocity =
+            -pushDirection * (2.2 + impact * 1.6);
+
+          car.position.z -= 0.7 + relativeMph * 0.018;
+          updateCarRoadPosition(car, roadCurve);
+        }
+
         continue;
       }
 
       if (
+        car.userData.collisionCooldown <= 0 &&
         !car.userData.near &&
         Math.abs(deltaX) < 2.3 &&
         Math.abs(deltaX) > 1.72 &&

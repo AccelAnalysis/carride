@@ -2,6 +2,17 @@
 
 Nightline Driver is a browser-based 3D first-person driving game built with Three.js.
 
+## Current gameplay
+
+- Endless first-person highway driving
+- Smooth left and right road curves with straight sections between bends
+- Speed-sensitive curve drift that requires steering through the turn
+- Traffic that follows the curved road centerline
+- Vehicle-to-vehicle collision detection with relative-speed damage
+- Collision shove, speed loss, traffic deflection, and collision cooldown
+- Overtake and close-pass scoring
+- Keyboard and mobile touch controls
+
 ## Project structure
 
 ```text
@@ -12,8 +23,9 @@ carride/
 └── src/
     ├── config.js       # Shared gameplay constants and tuning values
     ├── input.js        # Keyboard and mobile touch controls
-    ├── main.js         # Game state, physics orchestration and animation loop
-    ├── traffic.js      # Traffic vehicles, recycling and collision checks
+    ├── main.js         # Game state, handling, physics and animation loop
+    ├── road.js         # Shared curved-road centerline geometry
+    ├── traffic.js      # Traffic vehicles, curved paths and collisions
     ├── ui.js           # HUD, toast, damage flash and screen state
     └── world.js        # Three.js scene, cockpit, road, buildings and renderer
 ```
@@ -21,6 +33,7 @@ carride/
 ## Where to make changes
 
 - **Driving feel / difficulty:** edit `src/config.js` and the driving update in `src/main.js`.
+- **Curve geometry:** edit `src/road.js` and curve tuning in `src/config.js`.
 - **Road, cockpit, lighting, scenery:** edit `src/world.js`.
 - **Traffic cars and collision behavior:** edit `src/traffic.js`.
 - **Keyboard or phone controls:** edit `src/input.js`.
@@ -30,7 +43,7 @@ carride/
 
 ## Local development
 
-The JavaScript now uses ES modules, so serve the repository through a local web server instead of opening `index.html` directly from `file://`.
+The JavaScript uses ES modules, so serve the repository through a local web server instead of opening `index.html` directly from `file://`.
 
 For example:
 

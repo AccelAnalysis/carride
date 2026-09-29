@@ -1,5 +1,6 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-import { ROAD_WIDTH, SEGMENT_COUNT, SEGMENT_LENGTH } from "./config.js";
+import { MAX_SPEED, ROAD_WIDTH, SEGMENT_COUNT, SEGMENT_LENGTH } from "./config.js";
+import { roadFrameAtZ } from "./road.js";
 
 function addBox(width, height, depth, material, x, y, z, parent) {
   const mesh = new THREE.Mesh(
@@ -122,6 +123,18 @@ function createCockpit(scene, camera) {
   return { cockpit, hood, wheel };
 }
 
+function createGround(scene) {
+  const ground = new THREE.Mesh(
+    new THREE.BoxGeometry(320, 0.02, 1200),
+    new THREE.MeshStandardMaterial({
+      color: 0x07120c,
+      roughness: 1
+    })
+  );
+  ground.position.set(0, -0.04, -275);
+  scene.add(ground);
+}
+
 function createRoad(scene) {
   const roadGroup = new THREE.Group();
   scene.add(roadGroup);
@@ -137,10 +150,6 @@ function createRoad(scene) {
   });
   const laneMaterial = new THREE.MeshBasicMaterial({ color: 0xf7f3d9 });
   const edgeMaterial = new THREE.MeshBasicMaterial({ color: 0x3ce5ff });
-  const grassMaterial = new THREE.MeshStandardMaterial({
-    color: 0x07120c,
-    roughness: 1
-  });
 
   const segments = [];
 
@@ -149,16 +158,51 @@ function createRoad(scene) {
     segment.position.z = -i * SEGMENT_LENGTH;
 
     addBox(ROAD_WIDTH, 0.08, SEGMENT_LENGTH, roadMaterial, 0, 0, 0, segment);
-    addBox(2, 0.06, SEGMENT_LENGTH, shoulderMaterial, -ROAD_WIDTH / 2 - 1, 0.01, 0, segment);
-    addBox(2, 0.06, SEGMENT_LENGTH, shoulderMaterial, ROAD_WIDTH / 2 + 1, 0.01, 0, segment);
-    addBox(90, 0.02, SEGMENT_LENGTH, grassMaterial, -ROAD_WIDTH / 2 - 47, 0, 0, segment);
-    addBox(90, 0.02, SEGMENT_LENGTH, grassMaterial, ROAD_WIDTH / 2 + 47, 0, 0, segment);
-    addBox(0.11, 0.025, SEGMENT_LENGTH, edgeMaterial, -ROAD_WIDTH / 2 + 0.12, 0.08, 0, segment);
-    addBox(0.11, 0.025, SEGMENT_LENGTH, edgeMaterial, ROAD_WIDTH / 2 - 0.12, 0.08, 0, segment);
+    addBox(
+      2,
+      0.06,
+      SEGMENT_LENGTH,
+      shoulderMaterial,
+      -ROAD_WIDTH / 2 - 1,
+      0.01,
+      0,
+      segment
+    );
+    addBox(
+      2,
+      0.06,
+      SEGMENT_LENGTH,
+      shoulderMaterial,
+      ROAD_WIDTH / 2 + 1,
+      0.01,
+      0,
+      segment
+    );
+
+    addBox(
+      0.11,
+      0.025,
+      SEGMENT_LENGTH,
+      edgeMaterial,
+      -ROAD_WIDTH / 2 + 0.12,
+      0.08,
+      0,
+      segment
+    );
+    addBox(
+      0.11,
+      0.025,
+      SEGMENT_LENGTH,
+      edgeMaterial,
+      ROAD_WIDTH / 2 - 0.12,
+      0.08,
+      0,
+      segment
+    );
 
     for (const laneX of [-ROAD_WIDTH / 6, ROAD_WIDTH / 6]) {
       for (
-        let z = -SEGMENT_LENGTH / 2 + 4;
+        let z = -SEGMENT_LENGTH / 2 + 2;
         z < SEGMENT_LENGTH / 2;
         z += 8
       ) {
@@ -170,7 +214,7 @@ function createRoad(scene) {
     segments.push(segment);
   }
 
-  return { roadGroup, segments };
+  return { segments };
 }
 
 function createRoadside(scene) {
@@ -206,6 +250,7 @@ function createRoadside(scene) {
     0x7dff9c
   ].map((color) => new THREE.MeshBasicMaterial({ color }));
 
+  const postMaterial = new THREE.MeshStandardMaterial({ color: 0x858b91 });
   const objects = [];
 
   function makeRoadsideObject(z) {
@@ -251,7 +296,7 @@ function createRoadside(scene) {
       0.12,
       1,
       0.12,
-      new THREE.MeshStandardMaterial({ color: 0x858b91 }),
+      postMaterial,
       reflectorX,
       0.5,
       0,
@@ -276,7 +321,13 @@ function createRoadside(scene) {
     makeRoadsideObject(-20 - i * 18);
   }
 
-  return { roadside, objects };
+  return { objects };
+}
+
+function applyRoadFrame(object, curve) {
+  const frame = roadFrameAtZ(object.position.z, curve);
+  object.position.x = frame.x;
+  object.rotation.y = frame.yaw;
 }
 
 export function createWorld(container) {
@@ -309,18 +360,21 @@ export function createWorld(container) {
   scene.add(moon);
 
   createStars(scene);
+  createGround(scene);
 
   const { cockpit, hood, wheel } = createCockpit(scene, camera);
   const { segments } = createRoad(scene);
   const { objects } = createRoadside(scene);
 
-  function advance(distance) {
+  function advance(distance, curve) {
     for (const segment of segments) {
       segment.position.z += distance;
 
       if (segment.position.z > SEGMENT_LENGTH) {
         segment.position.z -= SEGMENT_LENGTH * SEGMENT_COUNT;
       }
+
+      applyRoadFrame(segment, curve);
     }
 
     for (const object of objects) {
@@ -331,26 +385,39 @@ export function createWorld(container) {
         const scale = 0.8 + Math.random() * 0.5;
         object.scale.set(scale, scale, scale);
       }
+
+      applyRoadFrame(object, curve);
     }
   }
 
-  function updateView({ dt, time, lateral, steerVelocity, speed }) {
+  function updateView({
+    dt,
+    time,
+    lateral,
+    steerVelocity,
+    speed,
+    curve
+  }) {
     camera.position.x = THREE.MathUtils.lerp(
       camera.position.x,
       lateral,
       1 - Math.exp(-8 * dt)
     );
+
     camera.position.y =
       1.45 + Math.sin(time * 0.018) * Math.min(speed / 5000, 0.012);
 
+    const speedRatio = Math.min(speed / MAX_SPEED, 1);
+
     camera.rotation.z = THREE.MathUtils.lerp(
       camera.rotation.z,
-      -steerVelocity * 0.022,
+      -steerVelocity * 0.022 - curve * speedRatio * 0.012,
       1 - Math.exp(-6 * dt)
     );
+
     camera.rotation.y = THREE.MathUtils.lerp(
       camera.rotation.y,
-      -steerVelocity * 0.012,
+      -steerVelocity * 0.012 - curve * speedRatio * 0.01,
       1 - Math.exp(-5 * dt)
     );
 
@@ -370,6 +437,16 @@ export function createWorld(container) {
     cockpit.rotation.set(0, 0, 0);
     wheel.rotation.z = 0.04;
     hood.position.y = -1;
+
+    for (const segment of segments) {
+      segment.position.x = 0;
+      segment.rotation.y = 0;
+    }
+
+    for (const object of objects) {
+      object.position.x = 0;
+      object.rotation.y = 0;
+    }
   }
 
   function resize() {

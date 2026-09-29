@@ -37,19 +37,36 @@ export function createUI() {
     if (navigator.vibrate) navigator.vibrate(65);
   }
 
-  function update({ score, distanceMiles, health, speed, boost, offRoad, maxDisplaySpeed }) {
+  function update({
+    score,
+    distanceMiles,
+    health,
+    speed,
+    boost,
+    offRoad,
+    roadCurve,
+    maxDisplaySpeed
+  }) {
     refs.score.textContent = Math.floor(score).toLocaleString();
     refs.distance.textContent = distanceMiles.toFixed(2);
     refs.health.textContent = Math.ceil(health);
     refs.speed.textContent = Math.round(speed);
-    refs.speedFill.style.width = `${(Math.min(speed / maxDisplaySpeed, 1) * 100).toFixed(1)}%`;
+    refs.speedFill.style.width =
+      `${(Math.min(speed / maxDisplaySpeed, 1) * 100).toFixed(1)}%`;
     refs.health.style.color = health < 35 ? "var(--danger)" : "";
 
-    refs.mission.textContent = boost < 18
-      ? "Boost recharging…"
-      : offRoad
-        ? "Return to the road!"
-        : "Stay on the road. Pass traffic.";
+    if (offRoad) {
+      refs.mission.textContent = "Return to the road!";
+    } else if (boost < 18) {
+      refs.mission.textContent = "Boost recharging…";
+    } else if (Math.abs(roadCurve) > 0.42) {
+      refs.mission.textContent =
+        roadCurve > 0
+          ? "Right curve — steer with the bend."
+          : "Left curve — steer with the bend.";
+    } else {
+      refs.mission.textContent = "Stay on the road. Pass traffic.";
+    }
   }
 
   function showGameOver(score, distanceMiles) {
