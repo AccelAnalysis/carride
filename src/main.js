@@ -18,6 +18,7 @@ let running = false;
 let speed = 0;
 let lateral = 0;
 let steerVelocity = 0;
+let impactVelocity = 0;
 let health = 100;
 let score = 0;
 let distanceMiles = 0;
@@ -43,8 +44,25 @@ function renderHUD() {
     speed,
     boost,
     offRoad: Math.abs(lateral) > roadLimit,
+    roadCurve,
     maxDisplaySpeed
   });
+}
+
+function chooseNextCurve() {
+  curveClock =
+    GAMEPLAY.curveMinDuration +
+    Math.random() *
+      (GAMEPLAY.curveMaxDuration - GAMEPLAY.curveMinDuration);
+
+  if (Math.random() < GAMEPLAY.straightSectionChance) {
+    targetCurve = 0;
+    return;
+  }
+
+  const direction = Math.random() < 0.5 ? -1 : 1;
+  const intensity = 0.35 + Math.random() * 0.65;
+  targetCurve = direction * intensity;
 }
 
 function startGame() {
@@ -52,6 +70,7 @@ function startGame() {
   speed = GAMEPLAY.startSpeed;
   lateral = 0;
   steerVelocity = 0;
+  impactVelocity = 0;
   health = 100;
   score = 0;
   distanceMiles = 0;
@@ -59,7 +78,7 @@ function startGame() {
   invulnerability = 0;
   roadCurve = 0;
   targetCurve = 0;
-  curveClock = 0;
+  curveClock = 2.5;
 
   input.clear();
   world.resetView();
@@ -78,17 +97,32 @@ function endGame() {
 
   running = false;
   speed = 0;
+  impactVelocity = 0;
   input.clear();
   renderHUD();
   ui.showGameOver(score, distanceMiles);
 }
 
-function hit(amount, reason) {
-  if (invulnerability > 0 || !running) return;
+function applyCollision({
+  damage,
+  push,
+  speedRetention,
+  otherSpeed,
+  reason
+}) {
+  if (invulnerability > 0 || !running) {
+    return false;
+  }
 
-  health = Math.max(0, health - amount);
-  invulnerability = 0.8;
-  speed *= 0.58;
+  health = Math.max(0, health - damage);
+  invulnerability = GAMEPLAY.collisionInvulnerability;
+
+  const retainedSpeed = speed * speedRetention;
+  const trafficSpeedFloor = Math.min(otherSpeed * 0.82, speed);
+  speed = Math.max(retainedSpeed, trafficSpeedFloor);
+
+  impactVelocity += push;
+  steerVelocity *= 0.45;
 
   ui.damageFlash();
   ui.toast(reason);
@@ -96,20 +130,21 @@ function hit(amount, reason) {
   if (health <= 0) {
     endGame();
   }
+
+  return true;
 }
 
 function updateCurve(dt) {
   curveClock -= dt;
 
   if (curveClock <= 0) {
-    curveClock = 5 + Math.random() * 5;
-    targetCurve = (Math.random() - 0.5) * 1.8;
+    chooseNextCurve();
   }
 
   roadCurve = lerp(
     roadCurve,
     targetCurve,
-    1 - Math.exp(-0.25 * dt)
+    1 - Math.exp(-GAMEPLAY.curveResponse * dt)
   );
 }
 
@@ -122,7 +157,8 @@ function updateDriving(dt, time) {
   const steeringRight = input.pressed("d", "arrowright");
   const boosting = input.pressed("shift") && boost > 0 && speed > 35;
 
-  speed += (accelerating ? GAMEPLAY.acceleration : -GAMEPLAY.coastDrag) * dt;
+  speed +=
+    (accelerating ? GAMEPLAY.acceleration : -GAMEPLAY.coastDrag) * dt;
 
   if (braking) {
     speed -= GAMEPLAY.braking * dt;
@@ -157,15 +193,24 @@ function updateDriving(dt, time) {
     1 - Math.exp(-7 * dt)
   );
 
-  lateral += steerVelocity * dt * (0.45 + speed / 85);
+  lateral +=
+    steerVelocity *
+    dt *
+    (0.45 + speed / 85);
+
+  lateral += impactVelocity * dt;
+  impactVelocity *= Math.exp(-4.8 * dt);
+
   lateral *= Math.pow(0.999, dt * 60);
 
   updateCurve(dt);
 
-  lateral +=
+  const speedRatio = Math.min(speed / MAX_SPEED, 1);
+  lateral -=
     roadCurve *
-    (speed / MAX_SPEED) *
-    0.035 *
+    GAMEPLAY.curveDrift *
+    speedRatio *
+    speedRatio *
     dt;
 
   const offRoad = Math.abs(lateral) > roadLimit;
@@ -195,15 +240,14 @@ function updateDriving(dt, time) {
   distanceMiles += speed * dt / 3600;
   score += speed * dt * 0.13;
 
-  world.advance(worldDistance);
+  world.advance(worldDistance, roadCurve);
 
   traffic.update({
     dt,
     playerSpeed: speed,
     lateral,
-    onCollision: (amount, reason) => {
-      hit(amount, reason);
-    },
+    roadCurve,
+    onCollision: applyCollision,
     onOvertake: (points) => {
       score += points;
       ui.toast(`OVERTAKE +${points}`);
@@ -219,7 +263,8 @@ function updateDriving(dt, time) {
     time,
     lateral,
     steerVelocity,
-    speed
+    speed,
+    curve: roadCurve
   });
 
   renderHUD();
