@@ -1,5 +1,5 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-import { ROAD_WIDTH, SEGMENT_COUNT, SEGMENT_LENGTH } from "./config.js";
+import { MAX_SPEED, ROAD_WIDTH, SEGMENT_COUNT, SEGMENT_LENGTH } from "./config.js";
 import { roadFrameAtZ } from "./road.js";
 
 function addBox(width, height, depth, material, x, y, z, parent) {
@@ -407,7 +407,7 @@ export function createWorld(container) {
     camera.position.y =
       1.45 + Math.sin(time * 0.018) * Math.min(speed / 5000, 0.012);
 
-    const speedRatio = Math.min(speed / 165, 1);
+    const speedRatio = Math.min(speed / MAX_SPEED, 1);
 
     camera.rotation.z = THREE.MathUtils.lerp(
       camera.rotation.z,
