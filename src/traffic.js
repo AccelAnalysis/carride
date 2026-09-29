@@ -2,7 +2,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 import {
   GAMEPLAY,
   LANE_CENTERS,
-  TRAFFIC_COUNT,
+  MAX_TRAFFIC_COUNT,
   WORLD_SPEED
 } from "./config.js";
 import { roadOffsetAtZ, roadYawAtZ } from "./road.js";
@@ -14,11 +14,16 @@ const CAR_COLORS = [
   0x18a77d,
   0xe19d21,
   0x6c55d7,
-  0x25272a
+  0x25272a,
+  0xd8e04a
 ];
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function lerp(start, end, amount) {
+  return start + (end - start) * amount;
 }
 
 function addBox(width, height, depth, material, x, y, z, parent) {
@@ -85,17 +90,20 @@ function buildCar() {
   return car;
 }
 
-function resetCar(car, zMin = -450, zMax = -85) {
+function resetCar(car, track, zMin = -450, zMax = -85) {
+  const laneIndex = (Math.random() * LANE_CENTERS.length) | 0;
+  car.userData.laneIndex = laneIndex;
   car.userData.laneX =
-    LANE_CENTERS[(Math.random() * LANE_CENTERS.length) | 0] +
-    (Math.random() - 0.5) * 0.35;
-
-  car.userData.laneOffset = 0;
+    LANE_CENTERS[laneIndex] + (Math.random() - 0.5) * 0.24;
+  car.userData.targetLaneX = car.userData.laneX;
   car.userData.nudgeVelocity = 0;
-  car.userData.speed = 35 + Math.random() * 65;
+  car.userData.speed =
+    track.traffic.speedMin +
+    Math.random() * (track.traffic.speedMax - track.traffic.speedMin);
   car.userData.passed = false;
   car.userData.near = false;
   car.userData.collisionCooldown = 0;
+  car.userData.laneChangeClock = 2.5 + Math.random() * 6;
 
   car.position.set(
     car.userData.laneX,
@@ -106,27 +114,31 @@ function resetCar(car, zMin = -450, zMax = -85) {
 }
 
 function updateCarRoadPosition(car, curve) {
-  car.position.x =
-    roadOffsetAtZ(car.position.z, curve) +
-    car.userData.laneX +
-    car.userData.laneOffset;
-
+  car.position.x = roadOffsetAtZ(car.position.z, curve) + car.userData.laneX;
   car.rotation.y = roadYawAtZ(car.position.z, curve);
 }
 
-export function createTraffic(scene) {
+export function createTraffic(scene, initialTrack) {
+  let track = initialTrack;
   const cars = [];
 
-  for (let i = 0; i < TRAFFIC_COUNT; i += 1) {
+  for (let i = 0; i < MAX_TRAFFIC_COUNT; i += 1) {
     const car = buildCar();
-    resetCar(car, -520, -80);
+    resetCar(car, track, -520, -80);
+    car.visible = i < track.traffic.count;
     scene.add(car);
     cars.push(car);
   }
 
+  function setTrack(nextTrack) {
+    track = nextTrack;
+    resetAll();
+  }
+
   function resetAll() {
     cars.forEach((car, index) => {
-      resetCar(car, -520 - index * 11, -95);
+      car.visible = index < track.traffic.count;
+      resetCar(car, track, -520 - index * 9, -95);
     });
   }
 
@@ -135,25 +147,66 @@ export function createTraffic(scene) {
     playerSpeed,
     lateral,
     roadCurve,
+    progress,
     onCollision,
     onOvertake,
     onClosePass
   }) {
+    let drafting = false;
+
     for (const car of cars) {
+      if (!car.visible) continue;
+
       car.userData.collisionCooldown = Math.max(
         0,
         car.userData.collisionCooldown - dt
       );
 
-      car.userData.laneOffset += car.userData.nudgeVelocity * dt;
-      car.userData.nudgeVelocity *= Math.exp(-5.5 * dt);
-      car.userData.laneOffset *= Math.exp(-1.15 * dt);
+      car.userData.laneChangeClock -= dt;
+      if (car.userData.laneChangeClock <= 0 && car.position.z < -12) {
+        car.userData.laneChangeClock = 3.2 + Math.random() * 6;
 
-      const relativeSpeed =
-        (playerSpeed - car.userData.speed) * WORLD_SPEED;
+        if (Math.random() < track.traffic.laneChangeRate * (0.85 + progress * 0.5)) {
+          const direction = Math.random() < 0.5 ? -1 : 1;
+          const nextIndex = clamp(
+            car.userData.laneIndex + direction,
+            0,
+            LANE_CENTERS.length - 1
+          );
+
+          if (nextIndex !== car.userData.laneIndex) {
+            car.userData.laneIndex = nextIndex;
+            car.userData.targetLaneX =
+              LANE_CENTERS[nextIndex] + (Math.random() - 0.5) * 0.2;
+          }
+        }
+      }
+
+      car.userData.laneX = lerp(
+        car.userData.laneX,
+        car.userData.targetLaneX,
+        1 - Math.exp(-1.15 * dt)
+      );
+
+      car.userData.laneX += car.userData.nudgeVelocity * dt;
+      car.userData.nudgeVelocity *= Math.exp(-5.5 * dt);
+
+      const trafficSpeed = car.userData.speed + progress * 7;
+      const relativeSpeed = (playerSpeed - trafficSpeed) * WORLD_SPEED;
 
       car.position.z += relativeSpeed * dt;
       updateCarRoadPosition(car, roadCurve);
+
+      const deltaX = car.userData.laneX - lateral;
+
+      if (
+        car.position.z > -19 &&
+        car.position.z < -5 &&
+        Math.abs(deltaX) < 1.25 &&
+        playerSpeed > trafficSpeed + 4
+      ) {
+        drafting = true;
+      }
 
       if (car.position.z > 7) {
         if (!car.userData.passed) {
@@ -161,20 +214,17 @@ export function createTraffic(scene) {
           onOvertake(GAMEPLAY.overtakeScore);
         }
 
-        resetCar(car, -520, -250);
+        resetCar(car, track, -520, -255);
         updateCarRoadPosition(car, roadCurve);
         continue;
       }
 
-      if (car.position.z < -560) {
-        resetCar(car, -220, -80);
+      if (car.position.z < -570) {
+        resetCar(car, track, -235, -85);
         updateCarRoadPosition(car, roadCurve);
         continue;
       }
 
-      const trafficLateral =
-        car.userData.laneX + car.userData.laneOffset;
-      const deltaX = trafficLateral - lateral;
       const overlappingLongitudinally =
         car.position.z > -2.4 && car.position.z < 4.4;
 
@@ -183,7 +233,7 @@ export function createTraffic(scene) {
         Math.abs(deltaX) < 1.72 &&
         overlappingLongitudinally
       ) {
-        const relativeMph = Math.abs(playerSpeed - car.userData.speed);
+        const relativeMph = Math.abs(playerSpeed - trafficSpeed);
         const impact = clamp(0.35 + relativeMph / 105, 0.35, 1);
         const damage =
           GAMEPLAY.collisionDamageMin +
@@ -200,17 +250,15 @@ export function createTraffic(scene) {
           damage,
           push: playerPush,
           speedRetention: 0.72 - impact * 0.16,
-          otherSpeed: car.userData.speed,
-          reason: impact > 0.72 ? "HARD COLLISION" : "COLLISION"
+          otherSpeed: trafficSpeed,
+          reason: impact > 0.72 ? "HARD COLLISION" : "COLLISION",
+          hard: impact > 0.72
         });
 
         if (accepted !== false) {
-          car.userData.collisionCooldown =
-            GAMEPLAY.trafficCollisionCooldown;
-
+          car.userData.collisionCooldown = GAMEPLAY.trafficCollisionCooldown;
           car.userData.nudgeVelocity =
             -pushDirection * (2.2 + impact * 1.6);
-
           car.position.z -= 0.7 + relativeMph * 0.018;
           updateCarRoadPosition(car, roadCurve);
         }
@@ -234,10 +282,13 @@ export function createTraffic(scene) {
         car.userData.near = false;
       }
     }
+
+    return { drafting };
   }
 
   return {
     cars,
+    setTrack,
     resetAll,
     update
   };
