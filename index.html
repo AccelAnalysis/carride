@@ -24,9 +24,14 @@
         </div>
 
         <div class="chip">
-          <div class="label">Distance</div>
+          <div class="label">Track</div>
+          <div class="value compact" id="trackName">Metro Midnight</div>
+        </div>
+
+        <div class="chip">
+          <div class="label">Progress</div>
           <div class="value">
-            <span id="distance">0.00</span><span class="small"> mi</span>
+            <span id="progressValue">0</span><span class="small">%</span>
           </div>
         </div>
 
@@ -36,15 +41,33 @@
             <span id="health">100</span><span class="small">%</span>
           </div>
         </div>
-      </div>
 
-      <div class="chip" id="status">
-        <div class="label">Mission</div>
-        <div class="value" id="missionText">
-          Stay on the road. Pass traffic.
+        <div class="chip">
+          <div class="label">Time</div>
+          <div class="value compact" id="timer">0:00.0</div>
         </div>
       </div>
+
+      <div class="rightHud">
+        <div class="chip" id="status">
+          <div class="label">Mission</div>
+          <div class="value compact" id="missionText">
+            Stay clean. Build your combo.
+          </div>
+        </div>
+        <button id="pauseBtn" class="hudButton" aria-label="Pause game">Ⅱ</button>
+      </div>
     </div>
+
+    <div id="raceProgress">
+      <div id="raceProgressFill"></div>
+      <div class="checkpoint" style="left:25%"></div>
+      <div class="checkpoint" style="left:50%"></div>
+      <div class="checkpoint" style="left:75%"></div>
+    </div>
+
+    <div id="comboBadge">COMBO <strong id="comboValue">1.0×</strong></div>
+    <div id="draftBadge">SLIPSTREAM</div>
 
     <div id="crosshair"></div>
 
@@ -53,6 +76,13 @@
       <div id="speedUnit">MPH</div>
       <div id="speedTrack">
         <div id="speedFill"></div>
+      </div>
+      <div class="meterLabel">
+        <span>BOOST</span>
+        <span id="boostValue">100%</span>
+      </div>
+      <div id="boostTrack">
+        <div id="boostFill"></div>
       </div>
     </div>
   </div>
@@ -66,14 +96,37 @@
   </div>
 
   <div id="startScreen">
-    <div class="panel">
+    <div class="panel startPanel">
       <div class="eyebrow">First-person 3D driving</div>
       <h1>Nightline<br />Driver</h1>
 
       <p class="lede">
-        Thread through traffic on an endless neon highway. Keep your car
-        centered, build speed, overtake cleanly, and survive as long as possible.
+        Choose a course, chase a clean time, draft traffic for boost, and chain
+        overtakes into a high-score combo.
       </p>
+
+      <div class="trackGrid" aria-label="Choose a track">
+        <button class="trackCard selected" data-track="metro">
+          <span class="trackTopline">01 • Medium</span>
+          <strong>Metro Midnight</strong>
+          <span>1.8 mi • dense traffic • technical city bends</span>
+          <small>Best: <b id="best-metro">—</b></small>
+        </button>
+
+        <button class="trackCard" data-track="coast">
+          <span class="trackTopline">02 • Fast</span>
+          <strong>Coastal Rush</strong>
+          <span>2.2 mi • fast sweepers • sunrise coast</span>
+          <small>Best: <b id="best-coast">—</b></small>
+        </button>
+
+        <button class="trackCard" data-track="alpine">
+          <span class="trackTopline">03 • Hard</span>
+          <strong>Alpine Switchback</strong>
+          <span>2.0 mi • tight turns • aggressive traffic</span>
+          <small>Best: <b id="best-alpine">—</b></small>
+        </button>
+      </div>
 
       <div class="controlsGrid">
         <div class="controlCard">
@@ -88,36 +141,52 @@
         </div>
 
         <div class="controlCard">
-          <kbd>Shift</kbd> Boost when moving
+          <kbd>Shift</kbd> Boost
+          &nbsp;
+          <kbd>P</kbd> Pause
         </div>
 
         <div class="controlCard">
-          Mobile: use the on-screen steering, gas, brake, and boost controls
+          Draft behind traffic to recharge boost faster. Close passes extend your combo.
         </div>
       </div>
 
-      <button id="startBtn">Start Driving</button>
-      <button class="secondary" id="fsBtn">Full Screen</button>
+      <div class="menuActions">
+        <button id="startBtn">Start Track</button>
+        <button class="secondary" id="fsBtn">Full Screen</button>
+      </div>
 
       <div class="footerNote">
-        Tip: close overtakes score more points. Hitting traffic or leaving the
-        road damages the car.
+        Best times are saved on this device. Collisions break your combo and damage the car.
       </div>
     </div>
   </div>
 
+  <div id="pauseScreen">
+    <div class="pauseCard">
+      <div class="eyebrow">Race paused</div>
+      <h2>Paused</h2>
+      <p>Press <kbd>P</kbd> or resume when you are ready.</p>
+      <button id="resumeBtn">Resume</button>
+    </div>
+  </div>
+
   <div id="gameOver">
-    <div class="panel">
-      <div class="eyebrow">Run complete</div>
-      <h1 class="gameOverTitle">Vehicle disabled.</h1>
+    <div class="panel resultPanel">
+      <div class="eyebrow" id="resultEyebrow">Run complete</div>
+      <h1 class="gameOverTitle" id="resultTitle">Track complete.</h1>
 
-      <p class="lede">
-        Final score: <strong id="finalScore">0</strong>
-        &nbsp;•&nbsp;
-        Distance: <strong id="finalDistance">0.00 mi</strong>
-      </p>
+      <div class="resultGrid">
+        <div><span>Track</span><strong id="finalTrack">Metro Midnight</strong></div>
+        <div><span>Score</span><strong id="finalScore">0</strong></div>
+        <div><span>Time</span><strong id="finalTime">0:00.0</strong></div>
+        <div><span>Best</span><strong id="bestTime">—</strong></div>
+      </div>
 
-      <button id="restartBtn">Drive Again</button>
+      <div class="menuActions">
+        <button id="restartBtn">Drive Again</button>
+        <button class="secondary" id="trackBtn">Choose Track</button>
+      </div>
     </div>
   </div>
 

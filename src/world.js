@@ -37,11 +37,13 @@ function createStars(scene) {
     color: 0xcce7ff,
     size: 0.45,
     sizeAttenuation: true,
-    opacity: 0.85,
+    opacity: 0.82,
     transparent: true
   });
 
-  scene.add(new THREE.Points(geometry, material));
+  const stars = new THREE.Points(geometry, material);
+  scene.add(stars);
+  return stars;
 }
 
 function createCockpit(scene, camera) {
@@ -124,15 +126,17 @@ function createCockpit(scene, camera) {
 }
 
 function createGround(scene) {
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x07120c,
+    roughness: 1
+  });
   const ground = new THREE.Mesh(
-    new THREE.BoxGeometry(320, 0.02, 1200),
-    new THREE.MeshStandardMaterial({
-      color: 0x07120c,
-      roughness: 1
-    })
+    new THREE.BoxGeometry(360, 0.02, 1250),
+    material
   );
-  ground.position.set(0, -0.04, -275);
+  ground.position.set(0, -0.04, -285);
   scene.add(ground);
+  return { ground, material };
 }
 
 function createRoad(scene) {
@@ -214,49 +218,35 @@ function createRoad(scene) {
     segments.push(segment);
   }
 
-  return { segments };
+  return {
+    segments,
+    materials: { roadMaterial, shoulderMaterial, laneMaterial, edgeMaterial }
+  };
 }
 
-function createRoadside(scene) {
-  const roadside = new THREE.Group();
-  scene.add(roadside);
+function makeHolder(group, z) {
+  const holder = new THREE.Group();
+  holder.position.z = z;
+  holder.userData.startZ = z;
+  group.add(holder);
+  return holder;
+}
+
+function createCityEnvironment(scene) {
+  const group = new THREE.Group();
+  const objects = [];
+  scene.add(group);
 
   const buildingMaterials = [
-    new THREE.MeshStandardMaterial({
-      color: 0x111a28,
-      roughness: 0.82,
-      metalness: 0.08,
-      emissive: 0x06101f,
-      emissiveIntensity: 0.7
-    }),
-    new THREE.MeshStandardMaterial({
-      color: 0x171520,
-      roughness: 0.85,
-      emissive: 0x160717,
-      emissiveIntensity: 0.45
-    }),
-    new THREE.MeshStandardMaterial({
-      color: 0x101d1e,
-      roughness: 0.9,
-      emissive: 0x071514,
-      emissiveIntensity: 0.4
-    })
+    new THREE.MeshStandardMaterial({ color: 0x111a28, roughness: 0.82, emissive: 0x06101f, emissiveIntensity: 0.7 }),
+    new THREE.MeshStandardMaterial({ color: 0x171520, roughness: 0.85, emissive: 0x160717, emissiveIntensity: 0.45 }),
+    new THREE.MeshStandardMaterial({ color: 0x101d1e, roughness: 0.9, emissive: 0x071514, emissiveIntensity: 0.4 })
   ];
+  const glows = [0x40d9ff, 0xff5ca8, 0xffd65c, 0x7dff9c]
+    .map((color) => new THREE.MeshBasicMaterial({ color }));
 
-  const emissiveMaterials = [
-    0x40d9ff,
-    0xff5ca8,
-    0xffd65c,
-    0x7dff9c
-  ].map((color) => new THREE.MeshBasicMaterial({ color }));
-
-  const postMaterial = new THREE.MeshStandardMaterial({ color: 0x858b91 });
-  const objects = [];
-
-  function makeRoadsideObject(z) {
-    const holder = new THREE.Group();
-    holder.position.z = z;
-
+  for (let i = 0; i < 40; i += 1) {
+    const holder = makeHolder(group, -20 - i * 18);
     const side = Math.random() < 0.5 ? -1 : 1;
     const x = side * (12 + Math.random() * 30);
     const height = 8 + Math.random() * 34;
@@ -269,59 +259,117 @@ function createRoadside(scene) {
       depth,
       buildingMaterials[(Math.random() * buildingMaterials.length) | 0],
       x,
-      height / 2 - 0.05,
+      height / 2,
       0,
       holder
     );
 
-    const rows = Math.max(2, Math.floor(height / 5));
-    for (let row = 0; row < rows; row += 1) {
-      if (Math.random() < 0.45) continue;
-
-      const glow = addBox(
-        Math.max(1.2, width * 0.55),
-        0.17,
-        0.05,
-        emissiveMaterials[(Math.random() * emissiveMaterials.length) | 0],
+    if (Math.random() > 0.25) {
+      addBox(
+        Math.max(1.4, width * 0.55),
+        0.2,
+        0.08,
+        glows[(Math.random() * glows.length) | 0],
         x,
-        height - 2 - row * 4,
-        side < 0 ? depth / 2 + 0.04 : -depth / 2 - 0.04,
+        height - 2.2,
+        side < 0 ? depth / 2 + 0.05 : -depth / 2 - 0.05,
         holder
       );
-      glow.rotation.y = side < 0 ? 0 : Math.PI;
     }
 
-    const reflectorX = side * (ROAD_WIDTH / 2 + 2.3);
-    addBox(
-      0.12,
-      1,
-      0.12,
-      postMaterial,
-      reflectorX,
-      0.5,
-      0,
-      holder
-    );
-    addBox(
-      0.22,
-      0.16,
-      0.05,
-      emissiveMaterials[0],
-      reflectorX,
-      0.86,
-      side < 0 ? 0.08 : -0.08,
-      holder
-    );
-
-    roadside.add(holder);
     objects.push(holder);
   }
 
-  for (let i = 0; i < 40; i += 1) {
-    makeRoadsideObject(-20 - i * 18);
+  return { group, objects };
+}
+
+function createCoastEnvironment(scene) {
+  const group = new THREE.Group();
+  const objects = [];
+  scene.add(group);
+
+  const trunk = new THREE.MeshStandardMaterial({ color: 0x5e4934, roughness: 1 });
+  const leaf = new THREE.MeshStandardMaterial({ color: 0x1f5f48, roughness: 0.92 });
+  const rock = new THREE.MeshStandardMaterial({ color: 0x867d70, roughness: 1 });
+  const lamp = new THREE.MeshBasicMaterial({ color: 0xffd39a });
+
+  for (let i = 0; i < 38; i += 1) {
+    const holder = makeHolder(group, -24 - i * 19);
+    const side = i % 3 === 0 ? -1 : 1;
+    const x = side * (11 + Math.random() * 20);
+
+    if (i % 4 === 0) {
+      const boulder = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(2 + Math.random() * 2.5, 0),
+        rock
+      );
+      boulder.position.set(x, 1.1, 0);
+      boulder.scale.y = 0.62;
+      holder.add(boulder);
+    } else {
+      addBox(0.45, 5.8, 0.45, trunk, x, 2.9, 0, holder);
+      for (let j = 0; j < 4; j += 1) {
+        const crown = new THREE.Mesh(
+          new THREE.ConeGeometry(1.4, 3.2, 7),
+          leaf
+        );
+        crown.position.set(x + (j - 1.5) * 0.45, 6.2, (j % 2 ? 0.5 : -0.5));
+        crown.rotation.z = (j - 1.5) * 0.22;
+        holder.add(crown);
+      }
+    }
+
+    if (i % 3 === 0) {
+      addBox(0.12, 2.4, 0.12, rock, side * (ROAD_WIDTH / 2 + 2.5), 1.2, 0, holder);
+      addBox(0.3, 0.2, 0.08, lamp, side * (ROAD_WIDTH / 2 + 2.5), 2.3, 0, holder);
+    }
+
+    objects.push(holder);
   }
 
-  return { objects };
+  return { group, objects };
+}
+
+function createAlpineEnvironment(scene) {
+  const group = new THREE.Group();
+  const objects = [];
+  scene.add(group);
+
+  const trunk = new THREE.MeshStandardMaterial({ color: 0x3c3027, roughness: 1 });
+  const pine = new THREE.MeshStandardMaterial({ color: 0x173326, roughness: 1 });
+  const stone = new THREE.MeshStandardMaterial({ color: 0x4d5356, roughness: 1 });
+  const snow = new THREE.MeshStandardMaterial({ color: 0xcad8df, roughness: 0.95 });
+
+  for (let i = 0; i < 42; i += 1) {
+    const holder = makeHolder(group, -20 - i * 17);
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const x = side * (11 + Math.random() * 24);
+
+    addBox(0.42, 3.4, 0.42, trunk, x, 1.7, 0, holder);
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(2.2, 7.2, 8), pine);
+    crown.position.set(x, 5.0, 0);
+    holder.add(crown);
+
+    if (i % 5 === 0) {
+      const mountain = new THREE.Mesh(
+        new THREE.ConeGeometry(8 + Math.random() * 7, 18 + Math.random() * 18, 7),
+        stone
+      );
+      mountain.position.set(side * (34 + Math.random() * 34), 9, -7);
+      holder.add(mountain);
+
+      const cap = new THREE.Mesh(
+        new THREE.ConeGeometry(3.5, 5.5, 7),
+        snow
+      );
+      cap.position.set(mountain.position.x, 20, -7);
+      holder.add(cap);
+    }
+
+    objects.push(holder);
+  }
+
+  return { group, objects };
 }
 
 function applyRoadFrame(object, curve) {
@@ -330,16 +378,19 @@ function applyRoadFrame(object, curve) {
   object.rotation.y = frame.yaw;
 }
 
-export function createWorld(container) {
+export function createWorld(container, initialTrack) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x050912);
-  scene.fog = new THREE.FogExp2(0x071019, 0.0038);
+  scene.background = new THREE.Color(initialTrack.theme.sky);
+  scene.fog = new THREE.FogExp2(
+    initialTrack.theme.fog,
+    initialTrack.theme.fogDensity
+  );
 
   const camera = new THREE.PerspectiveCamera(
     72,
     window.innerWidth / window.innerHeight,
     0.1,
-    450
+    460
   );
   camera.position.set(0, 1.45, 3.35);
 
@@ -353,18 +404,57 @@ export function createWorld(container) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
 
-  scene.add(new THREE.HemisphereLight(0x8bbcff, 0x111018, 1.35));
+  const hemisphere = new THREE.HemisphereLight(
+    initialTrack.theme.hemiSky,
+    initialTrack.theme.hemiGround,
+    1.35
+  );
+  scene.add(hemisphere);
 
-  const moon = new THREE.DirectionalLight(0xb8d8ff, 1.05);
-  moon.position.set(-8, 14, 4);
-  scene.add(moon);
+  const keyLight = new THREE.DirectionalLight(initialTrack.theme.keyLight, 1.05);
+  keyLight.position.set(-8, 14, 4);
+  scene.add(keyLight);
 
-  createStars(scene);
-  createGround(scene);
-
+  const stars = createStars(scene);
+  const { material: groundMaterial } = createGround(scene);
   const { cockpit, hood, wheel } = createCockpit(scene, camera);
-  const { segments } = createRoad(scene);
-  const { objects } = createRoadside(scene);
+  const { segments, materials } = createRoad(scene);
+
+  const environments = {
+    metro: createCityEnvironment(scene),
+    coast: createCoastEnvironment(scene),
+    alpine: createAlpineEnvironment(scene)
+  };
+
+  let activeEnvironment = environments[initialTrack.id] ?? environments.metro;
+  let impactShake = 0;
+
+  function setTrack(track) {
+    const { theme } = track;
+    scene.background.setHex(theme.sky);
+    scene.fog.color.setHex(theme.fog);
+    scene.fog.density = theme.fogDensity;
+    groundMaterial.color.setHex(theme.ground);
+    materials.roadMaterial.color.setHex(theme.road);
+    materials.shoulderMaterial.color.setHex(theme.shoulder);
+    materials.laneMaterial.color.setHex(theme.lane);
+    materials.edgeMaterial.color.setHex(theme.edge);
+    hemisphere.color.setHex(theme.hemiSky);
+    hemisphere.groundColor.setHex(theme.hemiGround);
+    keyLight.color.setHex(theme.keyLight);
+
+    Object.entries(environments).forEach(([id, environment]) => {
+      environment.group.visible = id === track.id;
+    });
+
+    activeEnvironment = environments[track.id] ?? environments.metro;
+    stars.visible = track.id !== "coast";
+
+    for (const object of activeEnvironment.objects) {
+      object.position.z = object.userData.startZ;
+      object.scale.set(1, 1, 1);
+    }
+  }
 
   function advance(distance, curve) {
     for (const segment of segments) {
@@ -377,12 +467,12 @@ export function createWorld(container) {
       applyRoadFrame(segment, curve);
     }
 
-    for (const object of objects) {
+    for (const object of activeEnvironment.objects) {
       object.position.z += distance;
 
-      if (object.position.z > 35) {
-        object.position.z -= 40 * 18;
-        const scale = 0.8 + Math.random() * 0.5;
+      if (object.position.z > 38) {
+        object.position.z -= activeEnvironment.objects.length * 18;
+        const scale = 0.86 + Math.random() * 0.3;
         object.scale.set(scale, scale, scale);
       }
 
@@ -396,34 +486,53 @@ export function createWorld(container) {
     lateral,
     steerVelocity,
     speed,
-    curve
+    curve,
+    boosting
   }) {
+    impactShake *= Math.exp(-8 * dt);
+    const shakeX = (Math.random() - 0.5) * impactShake * 0.13;
+    const shakeY = (Math.random() - 0.5) * impactShake * 0.08;
+
     camera.position.x = THREE.MathUtils.lerp(
       camera.position.x,
-      lateral,
+      lateral + shakeX,
       1 - Math.exp(-8 * dt)
     );
 
     camera.position.y =
-      1.45 + Math.sin(time * 0.018) * Math.min(speed / 5000, 0.012);
+      1.45 +
+      Math.sin(time * 0.018) * Math.min(speed / 5000, 0.012) +
+      shakeY;
 
     const speedRatio = Math.min(speed / MAX_SPEED, 1);
 
     camera.rotation.z = THREE.MathUtils.lerp(
       camera.rotation.z,
-      -steerVelocity * 0.022 - curve * speedRatio * 0.012,
+      -steerVelocity * 0.024 - curve * speedRatio * 0.015,
       1 - Math.exp(-6 * dt)
     );
 
     camera.rotation.y = THREE.MathUtils.lerp(
       camera.rotation.y,
-      -steerVelocity * 0.012 - curve * speedRatio * 0.01,
+      -steerVelocity * 0.013 - curve * speedRatio * 0.011,
       1 - Math.exp(-5 * dt)
     );
+
+    const targetFov = 72 + speedRatio * 6 + (boosting ? 3 : 0);
+    camera.fov = THREE.MathUtils.lerp(
+      camera.fov,
+      targetFov,
+      1 - Math.exp(-4 * dt)
+    );
+    camera.updateProjectionMatrix();
 
     wheel.rotation.z = 0.04 - steerVelocity * 0.12;
     hood.position.y =
       -1 + Math.sin(time * 0.022) * Math.min(speed / 9000, 0.009);
+  }
+
+  function pulseImpact(amount = 1) {
+    impactShake = Math.max(impactShake, amount);
   }
 
   function updateIdle(time) {
@@ -434,19 +543,25 @@ export function createWorld(container) {
   function resetView() {
     camera.position.set(0, 1.45, 3.35);
     camera.rotation.set(0, 0, 0);
+    camera.fov = 72;
+    camera.updateProjectionMatrix();
     cockpit.rotation.set(0, 0, 0);
     wheel.rotation.z = 0.04;
     hood.position.y = -1;
+    impactShake = 0;
 
-    for (const segment of segments) {
-      segment.position.x = 0;
+    segments.forEach((segment, index) => {
+      segment.position.set(0, 0, -index * SEGMENT_LENGTH);
       segment.rotation.y = 0;
-    }
+    });
 
-    for (const object of objects) {
-      object.position.x = 0;
-      object.rotation.y = 0;
-    }
+    Object.values(environments).forEach((environment) => {
+      environment.objects.forEach((object) => {
+        object.position.set(0, 0, object.userData.startZ);
+        object.rotation.y = 0;
+        object.scale.set(1, 1, 1);
+      });
+    });
   }
 
   function resize() {
@@ -457,14 +572,17 @@ export function createWorld(container) {
   }
 
   window.addEventListener("resize", resize);
+  setTrack(initialTrack);
 
   return {
     scene,
     camera,
     renderer,
     advance,
+    setTrack,
     updateView,
     updateIdle,
+    pulseImpact,
     resetView,
     render() {
       renderer.render(scene, camera);

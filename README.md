@@ -1,51 +1,63 @@
 # carride
 
-Nightline Driver is a browser-based 3D first-person driving game built with Three.js.
+Nightline Driver is a browser-based 3D first-person driving game built with Three.js and designed to run as a static site, including GitHub Pages.
 
-## Current gameplay
+## Tracks
 
-- Endless first-person highway driving
-- Smooth left and right road curves with straight sections between bends
-- Speed-sensitive curve drift that requires steering through the turn
-- Traffic that follows the curved road centerline
-- Vehicle-to-vehicle collision detection with relative-speed damage
-- Collision shove, speed loss, traffic deflection, and collision cooldown
-- Overtake and close-pass scoring
+The game now has three finite, replayable tracks with distinct curve sequences, scenery, traffic behavior, and difficulty:
+
+- **Metro Midnight** — 1.8 mi, dense neon-city traffic and technical bends.
+- **Coastal Rush** — 2.2 mi, faster sweepers, lighter traffic, and a sunrise-coast environment.
+- **Alpine Switchback** — 2.0 mi, tight switchbacks, mountain scenery, and more aggressive traffic.
+
+## Gameplay
+
+- First-person cockpit driving with speed-sensitive camera FOV
+- Track progress, run timer, checkpoints, finish line, and persistent best times
+- Smooth deterministic curves unique to each track
+- Traffic that follows the road, changes lanes, and scales with race progress
+- Vehicle-to-vehicle collision detection with relative-speed damage and impact shake
+- Overtake and close-pass scoring with a clean-driving combo multiplier
+- Slipstream drafting that accelerates boost recharge
+- Rechargeable boost system with dedicated HUD meter
+- Off-road speed loss, damage, and reduced control
+- Pause/resume support
+- Lightweight synthesized engine, reward, impact, and finish sounds
 - Keyboard and mobile touch controls
+- Responsive HUD and track-selection interface
+
+## Controls
+
+- **W / Up Arrow** — accelerate
+- **S / Down Arrow** — brake
+- **A / D or Left / Right Arrow** — steer
+- **Shift** — boost
+- **P or Escape** — pause/resume
+- **M** — mute/unmute audio
+- Mobile devices use the on-screen steering, gas, brake, and boost controls.
 
 ## Project structure
 
 ```text
 carride/
-├── index.html          # Minimal page shell and game markup
+├── index.html          # Page shell, track selection, HUD and result screens
 ├── styles/
 │   └── game.css        # HUD, menus, responsive and touch styles
 └── src/
+    ├── audio.js        # Lightweight Web Audio engine and game cues
     ├── config.js       # Shared gameplay constants and tuning values
     ├── input.js        # Keyboard and mobile touch controls
-    ├── main.js         # Game state, handling, physics and animation loop
+    ├── main.js         # Race state, handling, scoring and animation loop
     ├── road.js         # Shared curved-road centerline geometry
-    ├── traffic.js      # Traffic vehicles, curved paths and collisions
-    ├── ui.js           # HUD, toast, damage flash and screen state
-    └── world.js        # Three.js scene, cockpit, road, buildings and renderer
+    ├── tracks.js       # Track definitions, curve sequences and themes
+    ├── traffic.js      # Traffic AI, drafting, collisions and lane changes
+    ├── ui.js           # HUD, menus, results, toast and damage feedback
+    └── world.js        # Three.js scene, cockpit and track environments
 ```
-
-## Where to make changes
-
-- **Driving feel / difficulty:** edit `src/config.js` and the driving update in `src/main.js`.
-- **Curve geometry:** edit `src/road.js` and curve tuning in `src/config.js`.
-- **Road, cockpit, lighting, scenery:** edit `src/world.js`.
-- **Traffic cars and collision behavior:** edit `src/traffic.js`.
-- **Keyboard or phone controls:** edit `src/input.js`.
-- **HUD behavior and game screens:** edit `src/ui.js`.
-- **Visual styling:** edit `styles/game.css`.
-- **Page structure:** edit `index.html`.
 
 ## Local development
 
 The JavaScript uses ES modules, so serve the repository through a local web server instead of opening `index.html` directly from `file://`.
-
-For example:
 
 ```bash
 python3 -m http.server 8000
@@ -53,7 +65,7 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000`.
 
-Three.js is currently loaded as an ES module from jsDelivr, so the game still requires internet access unless that dependency is vendored locally.
+Three.js is loaded as an ES module from jsDelivr, so the game requires internet access unless that dependency is vendored locally.
 
 ## Hosting
 
