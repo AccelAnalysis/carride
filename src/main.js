@@ -6,20 +6,23 @@ import {
 } from "./config.js";
 import { createAudio } from "./audio.js";
 import { createInput } from "./input.js";
+import { createProceduralRoad } from "./proceduralRoad.js";
 import { createTraffic } from "./traffic.js";
-import { DEFAULT_TRACK_ID, getTrack } from "./tracks.js";
+import { DEFAULT_TRACK_ID, getTrack, TRACKS } from "./tracks.js";
 import { createUI } from "./ui.js";
+import { getWeatherProfile, WEATHER_STAGE_COUNT } from "./weather.js";
 import { createWorld } from "./world.js";
 
 const BEST_TIMES_KEY = "nightline-driver-best-times-v2";
 
-const ui = createUI();
+const ui = createUI(TRACKS);
 const input = createInput();
 const audio = createAudio();
 
 let selectedTrack = getTrack(DEFAULT_TRACK_ID);
 const world = createWorld(document.getElementById("game"), selectedTrack);
 const traffic = createTraffic(world.scene, selectedTrack);
+const proceduralRoad = createProceduralRoad(selectedTrack);
 
 let running = false;
 let paused = false;
@@ -37,11 +40,10 @@ let combo = 1;
 let comboClock = 0;
 let drafting = false;
 let nextCheckpoint = 1;
-
 let roadCurve = 0;
-let targetCurve = 0;
-let curveSectionIndex = 0;
-let curveClock = 0;
+let weatherStage = 0;
+let weatherProfile = world.setWeather(weatherStage);
+let lastRunCompleted = false;
 let lastTime = performance.now();
 
 const roadLimit = ROAD_WIDTH / 2 - 1.1;
@@ -61,6 +63,7 @@ function loadBestTimes() {
 let bestTimes = loadBestTimes();
 ui.updateBestTimes(bestTimes);
 ui.selectTrack(selectedTrack.id);
+ui.setTiltEnabled(input.tiltEnabled);
 
 function saveBestTime(trackId, time) {
   const current = Number(bestTimes[trackId]);
@@ -93,41 +96,26 @@ function renderHUD() {
     offRoad: Math.abs(lateral) > roadLimit,
     roadCurve,
     track: selectedTrack,
+    weather: weatherProfile,
     drafting,
     combo,
     maxDisplaySpeed
   });
 }
 
-function resetCurveSequence() {
-  curveSectionIndex = 0;
-  const section = selectedTrack.curveSections[0];
-  roadCurve = section.curve;
-  targetCurve = section.curve;
-  curveClock = section.duration;
+function resetCourse() {
+  proceduralRoad.setTrack(selectedTrack);
+  roadCurve = proceduralRoad.curve;
 }
 
-function advanceCurveSequence(dt) {
-  curveClock -= dt;
-
-  while (curveClock <= 0) {
-    curveSectionIndex =
-      (curveSectionIndex + 1) % selectedTrack.curveSections.length;
-    const section = selectedTrack.curveSections[curveSectionIndex];
-    targetCurve = section.curve;
-    curveClock += section.duration;
+function startGame({ advanceWeather = false } = {}) {
+  if (advanceWeather) {
+    weatherStage = Math.min(WEATHER_STAGE_COUNT - 1, weatherStage + 1);
   }
 
-  roadCurve = lerp(
-    roadCurve,
-    targetCurve,
-    1 - Math.exp(-selectedTrack.handling.curveResponse * dt)
-  );
-}
-
-function startGame() {
   running = true;
   paused = false;
+  lastRunCompleted = false;
   speed = GAMEPLAY.startSpeed;
   lateral = 0;
   steerVelocity = 0;
@@ -143,17 +131,21 @@ function startGame() {
   drafting = false;
   nextCheckpoint = 1;
 
-  resetCurveSequence();
+  resetCourse();
 
   input.clear();
   world.setTrack(selectedTrack);
+  weatherProfile = world.setWeather(weatherStage);
   world.resetView();
   traffic.setTrack(selectedTrack);
 
   ui.hideStart();
   ui.hideGameOver();
   ui.hidePause();
-  ui.toast(selectedTrack.name.toUpperCase(), 1000);
+  ui.toast(
+    `${selectedTrack.name.toUpperCase()} • ${weatherProfile.name.toUpperCase()}`,
+    1200
+  );
   audio.start();
   renderHUD();
 
@@ -165,6 +157,7 @@ function finishRun(completed) {
 
   running = false;
   paused = false;
+  lastRunCompleted = completed;
   speed = 0;
   impactVelocity = 0;
   drafting = false;
@@ -177,6 +170,13 @@ function finishRun(completed) {
     audio.finish();
   }
 
+  const nextWeather = getWeatherProfile(
+    selectedTrack,
+    completed
+      ? Math.min(WEATHER_STAGE_COUNT - 1, weatherStage + 1)
+      : weatherStage
+  );
+
   renderHUD();
 
   ui.showResult({
@@ -184,8 +184,10 @@ function finishRun(completed) {
     score,
     elapsed,
     track: selectedTrack,
+    weather: weatherProfile,
     bestTime: Number(bestTimes[selectedTrack.id]),
-    isNewBest
+    isNewBest,
+    nextWeather
   });
 }
 
@@ -282,15 +284,13 @@ function updateDriving(dt, time) {
 
   const accelerating = input.pressed("w", "arrowup");
   const braking = input.pressed("s", "arrowdown");
-  const steeringLeft = input.pressed("a", "arrowleft");
-  const steeringRight = input.pressed("d", "arrowright");
   const boosting = input.pressed("shift") && boost > 0 && speed > 35;
 
   speed +=
     (accelerating ? GAMEPLAY.acceleration : -GAMEPLAY.coastDrag) * dt;
 
   if (braking) {
-    speed -= GAMEPLAY.braking * dt;
+    speed -= GAMEPLAY.braking * weatherProfile.brakingGrip * dt;
   }
 
   if (boosting) {
@@ -306,12 +306,10 @@ function updateDriving(dt, time) {
     MAX_SPEED + (boosting ? 34 : 0)
   );
 
-  const steerInput =
-    (steeringRight ? 1 : 0) -
-    (steeringLeft ? 1 : 0);
-
+  const steerInput = input.steering();
   const speedRatio = Math.min(speed / MAX_SPEED, 1);
-  const steerRate = lerp(7.1, 3.25, speedRatio);
+  const steerRate =
+    lerp(7.1, 3.25, speedRatio) * weatherProfile.grip;
 
   steerVelocity = lerp(
     steerVelocity,
@@ -328,14 +326,22 @@ function updateDriving(dt, time) {
   impactVelocity *= Math.exp(-4.8 * dt);
   lateral *= Math.pow(0.999, dt * 60);
 
-  advanceCurveSequence(dt);
-
   lateral -=
     roadCurve *
     selectedTrack.handling.curveDrift *
+    weatherProfile.driftMultiplier *
     speedRatio *
     speedRatio *
     dt;
+
+  if (weatherProfile.wind > 0) {
+    lateral +=
+      Math.sin(time * 0.0016) *
+      weatherProfile.wind *
+      speedRatio *
+      dt *
+      0.018;
+  }
 
   const offRoad = Math.abs(lateral) > roadLimit;
 
@@ -367,6 +373,7 @@ function updateDriving(dt, time) {
   distanceMiles += speed * dt / 3600;
   score += speed * dt * 0.13 * combo;
 
+  roadCurve = proceduralRoad.advance(worldDistance);
   world.advance(worldDistance, roadCurve);
 
   const progress = getProgress();
@@ -436,17 +443,25 @@ function loop(time) {
 ui.refs.trackButtons.forEach((button) => {
   button.addEventListener("click", () => {
     if (running) return;
+
     selectedTrack = getTrack(button.dataset.track);
+    weatherStage = 0;
+    lastRunCompleted = false;
+    resetCourse();
+
     ui.selectTrack(selectedTrack.id);
     world.setTrack(selectedTrack);
+    weatherProfile = world.setWeather(weatherStage);
     world.resetView();
     traffic.setTrack(selectedTrack);
     renderHUD();
   });
 });
 
-ui.refs.startButton.addEventListener("click", startGame);
-ui.refs.restartButton.addEventListener("click", startGame);
+ui.refs.startButton.addEventListener("click", () => startGame());
+ui.refs.restartButton.addEventListener("click", () => {
+  startGame({ advanceWeather: lastRunCompleted });
+});
 ui.refs.pauseButton.addEventListener("click", () => togglePause());
 ui.refs.resumeButton.addEventListener("click", () => togglePause(false));
 
@@ -454,10 +469,31 @@ ui.refs.trackButton.addEventListener("click", () => {
   ui.hideGameOver();
   ui.showStart();
   world.setTrack(selectedTrack);
+  weatherProfile = world.setWeather(weatherStage);
   world.resetView();
   traffic.setTrack(selectedTrack);
   renderHUD();
 });
+
+if (ui.refs.tiltButton) {
+  ui.refs.tiltButton.addEventListener("click", async () => {
+    if (input.tiltEnabled) {
+      input.disableTilt();
+      ui.setTiltEnabled(false);
+      ui.toast("TILT STEERING OFF");
+      return;
+    }
+
+    const enabled = await input.enableTilt();
+    ui.setTiltEnabled(enabled);
+    ui.toast(
+      enabled
+        ? "TILT STEERING ON • HOLD PHONE NATURALLY"
+        : "TILT PERMISSION NOT AVAILABLE",
+      1400
+    );
+  });
+}
 
 window.addEventListener("keydown", (event) => {
   if (event.repeat) return;
