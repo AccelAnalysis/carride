@@ -7,7 +7,27 @@ export function formatTime(seconds) {
   return `${minutes}:${remaining.toFixed(1).padStart(4, "0")}`;
 }
 
-export function createUI() {
+function renderTrackCards(tracks) {
+  const grid = $("trackGrid");
+  if (!grid) return;
+
+  grid.innerHTML = tracks
+    .map(
+      (track, index) => `
+        <button class="trackCard ${index === 0 ? "selected" : ""}" data-track="${track.id}">
+          <span class="trackTopline">${String(index + 1).padStart(2, "0")} • ${track.difficulty}</span>
+          <strong>${track.name}</strong>
+          <span>${track.lengthMiles.toFixed(1)} mi • ${track.tagline}</span>
+          <small>Best: <b id="best-${track.id}">—</b></small>
+        </button>
+      `
+    )
+    .join("");
+}
+
+export function createUI(tracks = []) {
+  renderTrackCards(tracks);
+
   const refs = {
     score: $("score"),
     health: $("health"),
@@ -19,6 +39,8 @@ export function createUI() {
     progressFill: $("raceProgressFill"),
     timer: $("timer"),
     trackName: $("trackName"),
+    weather: $("weatherValue"),
+    challenge: $("challengeValue"),
     combo: $("comboValue"),
     comboBadge: $("comboBadge"),
     draftBadge: $("draftBadge"),
@@ -26,11 +48,13 @@ export function createUI() {
     pause: $("pauseScreen"),
     gameOver: $("gameOver"),
     finalTrack: $("finalTrack"),
+    finalWeather: $("finalWeather"),
     finalScore: $("finalScore"),
     finalTime: $("finalTime"),
     bestTime: $("bestTime"),
     resultTitle: $("resultTitle"),
     resultEyebrow: $("resultEyebrow"),
+    nextChallenge: $("nextChallenge"),
     mission: $("missionText"),
     flash: $("damageFlash"),
     toast: $("toast"),
@@ -40,6 +64,7 @@ export function createUI() {
     pauseButton: $("pauseBtn"),
     resumeButton: $("resumeBtn"),
     fullscreenButton: $("fsBtn"),
+    tiltButton: $("tiltBtn"),
     trackButtons: Array.from(document.querySelectorAll("[data-track]"))
   };
 
@@ -71,6 +96,7 @@ export function createUI() {
     offRoad,
     roadCurve,
     track,
+    weather,
     drafting,
     combo,
     maxDisplaySpeed
@@ -81,6 +107,8 @@ export function createUI() {
     refs.health.textContent = Math.ceil(health);
     refs.speed.textContent = Math.round(speed);
     refs.trackName.textContent = track.name;
+    refs.weather.textContent = weather?.name ?? "Clear";
+    refs.challenge.textContent = `${(weather?.stage ?? 0) + 1}/${(weather?.maxStage ?? 3) + 1}`;
     refs.progress.textContent = Math.floor(progressPercent);
     refs.progressFill.style.width = `${progressPercent.toFixed(2)}%`;
     refs.timer.textContent = formatTime(elapsed);
@@ -97,6 +125,8 @@ export function createUI() {
 
     if (offRoad) {
       refs.mission.textContent = "Return to the road!";
+    } else if (weather && weather.stage >= 3) {
+      refs.mission.textContent = `${weather.name}: grip and visibility severely reduced.`;
     } else if (drafting) {
       refs.mission.textContent = "Slipstream — boost charging fast.";
     } else if (boost < 18) {
@@ -114,9 +144,11 @@ export function createUI() {
   }
 
   function updateBestTimes(bestTimes) {
-    for (const [trackId, time] of Object.entries(bestTimes)) {
-      const element = $(`best-${trackId}`);
-      if (element) element.textContent = formatTime(time);
+    for (const track of tracks) {
+      const element = $(`best-${track.id}`);
+      if (!element) continue;
+      const time = Number(bestTimes[track.id]);
+      element.textContent = Number.isFinite(time) ? formatTime(time) : "—";
     }
   }
 
@@ -128,13 +160,21 @@ export function createUI() {
     });
   }
 
+  function setTiltEnabled(enabled) {
+    if (!refs.tiltButton) return;
+    refs.tiltButton.textContent = enabled ? "Tilt Steering: On" : "Enable Tilt Steering";
+    refs.tiltButton.classList.toggle("active", enabled);
+  }
+
   function showResult({
     completed,
     score,
     elapsed,
     track,
+    weather,
     bestTime,
-    isNewBest
+    isNewBest,
+    nextWeather
   }) {
     refs.resultEyebrow.textContent = completed
       ? isNewBest
@@ -145,9 +185,23 @@ export function createUI() {
       ? "Finish line."
       : "Vehicle disabled.";
     refs.finalTrack.textContent = track.name;
+    refs.finalWeather.textContent = weather?.name ?? "Clear";
     refs.finalScore.textContent = Math.floor(score).toLocaleString();
     refs.finalTime.textContent = formatTime(elapsed);
     refs.bestTime.textContent = formatTime(bestTime);
+
+    if (completed && nextWeather && nextWeather.stage > weather.stage) {
+      refs.nextChallenge.textContent =
+        `Next run: Challenge ${nextWeather.stage + 1} — ${nextWeather.name}.`;
+      refs.restartButton.textContent = "Next Weather Challenge";
+    } else if (completed) {
+      refs.nextChallenge.textContent = "Maximum weather challenge reached.";
+      refs.restartButton.textContent = "Drive Again";
+    } else {
+      refs.nextChallenge.textContent = `Retry Challenge ${weather.stage + 1} — ${weather.name}.`;
+      refs.restartButton.textContent = "Retry";
+    }
+
     refs.gameOver.style.display = "grid";
   }
 
@@ -178,6 +232,7 @@ export function createUI() {
     update,
     updateBestTimes,
     selectTrack,
+    setTiltEnabled,
     showResult,
     hideGameOver,
     hideStart,

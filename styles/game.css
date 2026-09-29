@@ -526,3 +526,53 @@ button:active{transform:scale(.985)}
   .footerNote{display:none}
   #speedo{bottom:12px}
 }
+
+
+/* Procedural-world expansion */
+.trackGrid{
+  max-height:min(46vh,520px);
+  overflow:auto;
+  overscroll-behavior:contain;
+  padding-right:4px;
+  scrollbar-width:thin;
+}
+.challengeNote{
+  margin:0 0 18px;
+  font-size:13px;
+  line-height:1.5;
+  color:var(--accent);
+  opacity:.9;
+}
+#tiltBtn.active{
+  background:rgba(110,231,255,.18);
+  border-color:rgba(110,231,255,.5);
+  color:var(--accent);
+}
+.mobileFeature{display:none}
+.tilt-active #leftBtn,
+.tilt-active #rightBtn{
+  opacity:.25;
+}
+
+@media (pointer:coarse),(max-width:780px){
+  .mobileFeature{display:inline-flex}
+  .cluster .chip:nth-child(2),
+  .cluster .chip:nth-child(4),
+  .cluster .chip:nth-child(7){display:none}
+  .trackGrid{
+    max-height:48vh;
+    grid-template-columns:1fr;
+  }
+  .tilt-active #leftBtn,
+  .tilt-active #rightBtn{
+    opacity:.16;
+    pointer-events:none;
+  }
+}
+
+@media (max-height:650px) and (orientation:landscape){
+  .trackGrid{
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    max-height:42vh;
+  }
+}
